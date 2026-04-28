@@ -5,16 +5,16 @@ import { persist } from 'zustand/middleware'
 import type { AuthUser, UserRole } from '@/types'
 
 interface AuthState {
-  user:      AuthUser | null
-  token:     string | null
-  isLoading: boolean
+  user:         AuthUser | null
+  token:        string | null
+  isLoading:    boolean
+  _hasHydrated: boolean
 
-  // Actions
-  setAuth:    (user: AuthUser, token: string) => void
-  logout:     () => void
-  setLoading: (loading: boolean) => void
+  setAuth:        (user: AuthUser, token: string) => void
+  logout:         () => void
+  setLoading:     (loading: boolean) => void
+  setHasHydrated: (val: boolean) => void
 
-  // Helpers
   isAuthenticated: () => boolean
   isAdmin:         () => boolean
   isOfficer:       () => boolean
@@ -24,22 +24,30 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      user:      null,
-      token:     null,
-      isLoading: false,
+      user:         null,
+      token:        null,
+      isLoading:    false,
+      _hasHydrated: false,
 
       setAuth: (user, token) => {
-        localStorage.setItem('token', token)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('token', token)
+        }
         set({ user, token })
       },
 
       logout: () => {
-        localStorage.removeItem('token')
-        localStorage.removeItem('user')
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('token')
+          localStorage.removeItem('loan-auth')
+          document.cookie = 'token=; Max-Age=0; path=/'
+          document.cookie = 'role=; Max-Age=0; path=/'
+        }
         set({ user: null, token: null })
       },
 
-      setLoading: (loading) => set({ isLoading: loading }),
+      setLoading:     (loading) => set({ isLoading: loading }),
+      setHasHydrated: (val)     => set({ _hasHydrated: val }),
 
       isAuthenticated: () => !!get().token && !!get().user,
       isAdmin:         () => get().user?.role === 'admin',

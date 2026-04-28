@@ -13,11 +13,13 @@ import {
   ShieldCheck,
   BarChart3,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import Swal from 'sweetalert2'
 import Cookies from 'js-cookie'
 import { authApi } from '@/lib/api/auth.api'
 import { useAuthStore } from '@/store/auth.store'
 import { cn } from '@/lib/utils'
+import type { AxiosError } from 'axios'
+import type { AuthUser } from '@/types'
 
 // ── Validation schemas ────────────────────────────────────────────────────
 const loginSchema = z.object({
@@ -41,24 +43,40 @@ const changePasswordSchema = z
 type LoginFormData          = z.infer<typeof loginSchema>
 type ChangePasswordFormData = z.infer<typeof changePasswordSchema>
 
+// ── API error shape ───────────────────────────────────────────────────────
+interface ApiErrorResponse {
+  success: false
+  message: string
+  errors?: { msg: string; path: string }[]
+}
+
+// ── Pending auth shape ────────────────────────────────────────────────────
+interface PendingAuth {
+  token: string
+  user:  AuthUser
+}
+
 // ── Feature list ──────────────────────────────────────────────────────────
-const features = [
-  {
-    icon:  BarChart3,
-    label: 'AI-powered credit scoring',
-    sub:   'RandomForest · LightGBM · Logistic Regression',
-  },
-  {
-    icon:  TrendingUp,
-    label: 'Real-time default prediction',
-    sub:   'Probability scores for every application',
-  },
-  {
-    icon:  ShieldCheck,
-    label: 'Full loan lifecycle management',
-    sub:   'From application to final repayment',
-  },
-]
+
+
+// ── SweetAlert2 theme helper ──────────────────────────────────────────────
+const isDark = () =>
+  typeof window !== 'undefined' &&
+  document.documentElement.classList.contains('dark')
+
+const swalTheme = () => ({
+  background:         isDark() ? '#111827' : '#ffffff',
+  color:              isDark() ? '#e2e8f0' : '#0f172a',
+  confirmButtonColor: '#7c3aed',
+  cancelButtonColor:  isDark() ? '#374151' : '#e5e7eb',
+})
+
+const swalCustomClass = {
+  popup:         'rounded-2xl',
+  title:         'text-base font-semibold',
+  confirmButton: 'rounded-lg px-5 py-2 text-sm font-medium',
+  cancelButton:  'rounded-lg px-5 py-2 text-sm font-medium',
+}
 
 // ── Input class helper ────────────────────────────────────────────────────
 const inputClass = (hasError: boolean) =>
@@ -73,20 +91,28 @@ const inputClass = (hasError: boolean) =>
       : 'border-input hover:border-ring/50'
   )
 
+// ── Cookie helper ─────────────────────────────────────────────────────────
+const setCookies = (token: string, role: string) => {
+  Cookies.set('token', token, { expires: 7, sameSite: 'strict', path: '/' })
+  Cookies.set('role',  role,  { expires: 7, sameSite: 'strict', path: '/' })
+}
+
+const clearCookies = () => {
+  Cookies.remove('token', { path: '/' })
+  Cookies.remove('role',  { path: '/' })
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 export default function LoginPage() {
   const router      = useRouter()
   const { setAuth } = useAuthStore()
 
-  const [showPassword,    setShowPassword]    = useState(false)
-  const [showNewPw,       setShowNewPw]       = useState(false)
-  const [showConfirmPw,   setShowConfirmPw]   = useState(false)
-  const [step,            setStep]            = useState<'login' | 'change-password'>('login')
-  const [isSubmitting,    setIsSubmitting]    = useState(false)
-  const [pendingAuth,     setPendingAuth]     = useState<{
-    token: string
-    user:  { user_id: string; email: string; role: string }
-  } | null>(null)
+  const [showPassword,  setShowPassword]  = useState(false)
+  const [showNewPw,     setShowNewPw]     = useState(false)
+  const [showConfirmPw, setShowConfirmPw] = useState(false)
+  const [step,          setStep]          = useState<'login' | 'change-password'>('login')
+  const [isSubmitting,  setIsSubmitting]  = useState(false)
+  const [pendingAuth,   setPendingAuth]   = useState<PendingAuth | null>(null)
 
   // ── Login form ────────────────────────────────────────────────────────
   const {
@@ -104,35 +130,89 @@ export default function LoginPage() {
     resolver: zodResolver(changePasswordSchema),
   })
 
+  // ── Redirect helper ───────────────────────────────────────────────────
+  const redirectByRole = (role: string) => {
+    router.replace(role === 'admin' ? '/admin' : '/officer')
+  }
+
   // ── Submit login ──────────────────────────────────────────────────────
   const onLogin = async (data: LoginFormData) => {
     setIsSubmitting(true)
     try {
       const result = await authApi.login(data)
+
+      // Store token immediately so Axios can use it
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('token', result.token)
+      }
+
       setPendingAuth(result)
 
-      // Detect first-time login by default password
+      // Detect first-time login by checking common default passwords
       const isFirstTime =
         data.password === 'admin123' || data.password === 'officer123'
 
       if (isFirstTime) {
-        toast.info('Welcome! Please set a new password to continue.')
+        await Swal.fire({
+          icon:              'info',
+          title:             'Welcome!',
+          html:              `
+            <p style="font-size:14px;color:${isDark() ? '#94a3b8' : '#64748b'}">
+              Please set a new password to secure your account before continuing.
+            </p>
+          `,
+          confirmButtonText: 'Set password',
+          ...swalTheme(),
+          customClass: swalCustomClass,
+        })
         setStep('change-password')
         return
       }
 
-      // Persist auth
-      setAuth(result.user as any, result.token)
-      Cookies.set('token', result.token,      { expires: 7, sameSite: 'strict' })
-      Cookies.set('role',  result.user.role,  { expires: 7, sameSite: 'strict' })
+      // Normal login — persist everything
+      setAuth(result.user, result.token)
+      setCookies(result.token, result.user.role)
 
-      toast.success('Welcome back!')
-      router.replace(result.user.role === 'admin' ? '/admin' : '/officer')
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.message ||
-          'Unable to sign in. Please check your credentials.'
-      )
+      await Swal.fire({
+        icon:             'success',
+        title:            'Welcome back!',
+        html:             `
+          <p style="font-size:14px;color:${isDark() ? '#94a3b8' : '#64748b'}">
+            Signed in as <strong>${result.user.email}</strong>
+          </p>
+        `,
+        timer:            1500,
+        showConfirmButton: false,
+        ...swalTheme(),
+        customClass: swalCustomClass,
+      })
+
+      redirectByRole(result.user.role)
+
+    } catch (err: unknown) {
+      // Clean up on failure
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('token')
+      }
+      clearCookies()
+
+      const axiosErr = err as AxiosError<ApiErrorResponse>
+      const message  =
+        axiosErr.response?.data?.message ||
+        'Unable to sign in. Please check your credentials.'
+
+      await Swal.fire({
+        icon:              'error',
+        title:             'Sign in failed',
+        html:              `
+          <p style="font-size:14px;color:${isDark() ? '#94a3b8' : '#64748b'}">
+            ${message}
+          </p>
+        `,
+        confirmButtonText: 'Try again',
+        ...swalTheme(),
+        customClass: swalCustomClass,
+      })
     } finally {
       setIsSubmitting(false)
     }
@@ -143,41 +223,64 @@ export default function LoginPage() {
     if (!pendingAuth) return
     setIsSubmitting(true)
     try {
-      localStorage.setItem('token', pendingAuth.token)
-
+      // Token is already in localStorage from login step above
       await authApi.changePassword({
         current_password: data.current_password,
         new_password:     data.new_password,
       })
 
-      setAuth(pendingAuth.user as any, pendingAuth.token)
-      Cookies.set('token', pendingAuth.token,     { expires: 7, sameSite: 'strict' })
-      Cookies.set('role',  pendingAuth.user.role, { expires: 7, sameSite: 'strict' })
+      // Now fully commit auth state
+      setAuth(pendingAuth.user, pendingAuth.token)
+      setCookies(pendingAuth.token, pendingAuth.user.role)
 
-      toast.success('Password updated. Welcome!')
-      router.replace(pendingAuth.user.role === 'admin' ? '/admin' : '/officer')
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.message || 'Failed to update password.'
-      )
+      await Swal.fire({
+        icon:              'success',
+        title:             'Password updated!',
+        html:              `
+          <p style="font-size:14px;color:${isDark() ? '#94a3b8' : '#64748b'}">
+            Your password has been changed successfully. Welcome!
+          </p>
+        `,
+        timer:             1500,
+        showConfirmButton: false,
+        ...swalTheme(),
+        customClass: swalCustomClass,
+      })
+
+      redirectByRole(pendingAuth.user.role)
+
+    } catch (err: unknown) {
+      const axiosErr = err as AxiosError<ApiErrorResponse>
+      const message  =
+        axiosErr.response?.data?.message ||
+        'Failed to update password. Please try again.'
+
+      await Swal.fire({
+        icon:              'error',
+        title:             'Password update failed',
+        html:              `
+          <p style="font-size:14px;color:${isDark() ? '#94a3b8' : '#64748b'}">
+            ${message}
+          </p>
+        `,
+        confirmButtonText: 'Try again',
+        ...swalTheme(),
+        customClass: swalCustomClass,
+      })
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="w-full max-w-[420px]">
 
-      {/* Logo + title */}
       <div className="mb-8 flex flex-col items-center gap-3 opacity-0 animate-fade-up [animation-fill-mode:forwards]">
         <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-border bg-card shadow-card">
           <TrendingUp className="h-7 w-7 text-foreground" strokeWidth={1.75} />
         </div>
         <div className="text-center">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            LoanApp
-          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Credit Scoring &amp; Loan Management
           </p>
@@ -187,7 +290,7 @@ export default function LoginPage() {
       {/* Main card */}
       <div
         className={cn(
-          'surface-card rounded-xl p-8 shadow-card-md',
+          'rounded-xl border border-border bg-card p-8 shadow-card-md',
           'opacity-0 animate-fade-up delay-100 [animation-fill-mode:forwards]'
         )}
       >
@@ -253,7 +356,9 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     tabIndex={-1}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-label={
+                      showPassword ? 'Hide password' : 'Show password'
+                    }
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {showPassword
@@ -403,11 +508,13 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setStep('login')}
+                  disabled={isSubmitting}
                   className={cn(
                     'flex h-10 flex-1 items-center justify-center rounded-lg border',
                     'border-input bg-background text-sm font-medium text-foreground',
                     'transition-colors hover:bg-muted',
-                    'focus:outline-none focus:ring-2 focus:ring-ring'
+                    'focus:outline-none focus:ring-2 focus:ring-ring',
+                    'disabled:opacity-50 disabled:cursor-not-allowed'
                   )}
                 >
                   Back
@@ -433,32 +540,6 @@ export default function LoginPage() {
             </form>
           </>
         )}
-      </div>
-
-      {/* Feature pills */}
-      <div
-        className={cn(
-          'mt-6 space-y-2.5',
-          'opacity-0 animate-fade-up delay-200 [animation-fill-mode:forwards]'
-        )}
-      >
-        {features.map(({ icon: Icon, label, sub }) => (
-          <div
-            key={label}
-            className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
-          >
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border border-border bg-muted">
-              <Icon
-                className="h-4 w-4 text-muted-foreground"
-                strokeWidth={1.75}
-              />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">{label}</p>
-              <p className="truncate text-xs text-muted-foreground">{sub}</p>
-            </div>
-          </div>
-        ))}
       </div>
 
       {/* Footer */}

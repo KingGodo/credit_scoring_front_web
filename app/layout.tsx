@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import { AppProviders } from '@/components/layout/AppProviders'
+import { StoreHydration } from '@/components/layout/StoreHydration'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -26,7 +27,16 @@ export default function RootLayout({
       className={`${GeistSans.variable} ${GeistMono.variable}`}
     >
       <body className="min-h-screen bg-background font-sans antialiased">
-        <AppProviders>{children}</AppProviders>
+        <AppProviders>
+          {/*
+           * StoreHydration runs useEffect after client mount.
+           * By that point Zustand has rehydrated from localStorage,
+           * so we safely set _hasHydrated = true.
+           * The dashboard layout waits for this before rendering or redirecting.
+           */}
+          <StoreHydration />
+          {children}
+        </AppProviders>
       </body>
     </html>
   )

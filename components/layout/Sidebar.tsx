@@ -37,44 +37,31 @@ interface NavGroup {
   items: NavItem[]
 }
 
-// ── Admin nav ─────────────────────────────────────────────────────────────
+// ── Admin navigation (Microfinance Company Admin) ─────────────────────────
+// Admin manages: products, loan approvals, and staff
 const adminNav: NavGroup[] = [
   {
     label: 'Overview',
     items: [
-      { label: 'Dashboard',      href: '/admin',                 icon: LayoutDashboard },
-    ],
-  },
-  {
-    label: 'Organization',
-    items: [
-      { label: 'Lenders',        href: '/admin/lenders',         icon: Building2 },
-      { label: 'Lender Staff',   href: '/admin/lender-staff',    icon: UserCheck },
-      { label: 'Users',          href: '/admin/users',           icon: Users },
+      { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
     ],
   },
   {
     label: 'Loan Products',
     items: [
-      { label: 'Products',       href: '/admin/loan-products',   icon: Package },
+      { label: 'Manage Products', href: '/admin/loan-products', icon: Package },
     ],
   },
   {
-    label: 'Machine Learning',
+    label: 'Organization',
     items: [
-      { label: 'Model Versions', href: '/admin/model-versions',  icon: Cpu },
-      { label: 'Predictions',    href: '/admin/prediction-runs', icon: Brain },
-    ],
-  },
-  {
-    label: 'System',
-    items: [
-      { label: 'Audit Logs',     href: '/admin/audit-logs',      icon: ClipboardList },
+      { label: 'Manage Staff',    href: '/admin/lender-staff',      icon: UserCheck },
+      { label: 'Company',         href: '/admin/lenders',           icon: Building2 },
     ],
   },
 ]
 
-// ── Loan Officer nav ──────────────────────────────────────────────────────
+// ── Loan Officer navigation ──────────────────────────────────────────────
 const officerNav: NavGroup[] = [
   {
     label: 'Overview',
@@ -83,24 +70,29 @@ const officerNav: NavGroup[] = [
     ],
   },
   {
-    label: 'Borrowers',
+    label: 'Customers',
     items: [
       { label: 'Borrowers',      href: '/officer/borrowers',           icon: Users },
       { label: 'KYC Documents',  href: '/officer/borrower-documents',  icon: FileText },
     ],
   },
   {
-    label: 'Loans',
+    label: 'Loan Applications',
     items: [
       { label: 'Applications',   href: '/officer/loan-applications',   icon: ClipboardList },
-      { label: 'Loans',          href: '/officer/loans',               icon: CreditCard },
+    ],
+  },
+  {
+    label: 'Loans',
+    items: [
+      { label: 'Active Loans',   href: '/officer/loans',               icon: CreditCard },
     ],
   },
   {
     label: 'Repayments',
     items: [
       { label: 'Schedules',      href: '/officer/repayment-schedules', icon: Calendar },
-      { label: 'Repayments',     href: '/officer/repayments',          icon: Banknote },
+      { label: 'Record Payment', href: '/officer/repayments',          icon: Banknote },
     ],
   },
 ]
@@ -121,7 +113,10 @@ export function Sidebar() {
   }
 
   const isActive = (href: string) => {
-    if (href === '/admin' || href === '/officer') return pathname === href
+    // Exact match for dashboard root
+    if (href === '/admin' || href === '/officer')
+      return pathname === href
+    // Otherwise check if pathname starts with the href (for nested routes)
     return pathname.startsWith(href)
   }
 
@@ -134,7 +129,6 @@ export function Sidebar() {
         collapsed ? 'w-[64px]' : 'w-[240px]'
       )}
     >
-
       {/* Logo */}
       <div
         className={cn(
@@ -151,7 +145,7 @@ export function Sidebar() {
               LoanApp
             </p>
             <p className="truncate text-[10px] uppercase tracking-wider text-sidebar-foreground/50">
-              {user?.role === 'admin' ? 'Administrator' : 'Loan Officer'}
+              {user?.role === 'admin' ? 'Company Admin' : 'Loan Officer'}
             </p>
           </div>
         )}
@@ -161,19 +155,16 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-4">
         {navGroups.map((group) => (
           <div key={group.label} className="mb-4">
-
             {/* Group label */}
             {!collapsed && (
               <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/30">
                 {group.label}
               </p>
             )}
-
             {/* Nav items */}
             {group.items.map((item) => {
               const active = isActive(item.href)
               const Icon   = item.icon
-
               return (
                 <Link
                   key={item.href}
@@ -188,11 +179,10 @@ export function Sidebar() {
                       : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
                   )}
                 >
-                  {/* Active bar */}
+                  {/* Active indicator bar */}
                   {active && (
                     <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-foreground" />
                   )}
-
                   <Icon
                     className={cn(
                       'h-4 w-4 flex-shrink-0 transition-colors',
@@ -202,11 +192,9 @@ export function Sidebar() {
                     )}
                     strokeWidth={active ? 2 : 1.75}
                   />
-
                   {!collapsed && (
                     <span className="truncate font-medium">{item.label}</span>
                   )}
-
                   {/* Tooltip when collapsed */}
                   {collapsed && (
                     <div className="pointer-events-none absolute left-full z-50 ml-3 hidden whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs text-background shadow-lg group-hover:block">
